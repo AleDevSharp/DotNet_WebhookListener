@@ -4,67 +4,67 @@
 [![C# 13](https://img.shields.io/badge/C%23-13.0-239120?logo=csharp&logoColor=white)](https://learn.microsoft.com/dotnet/csharp/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE.txt)
 [![Build & Tests](https://img.shields.io/badge/Tests-13%20Passed-brightgreen)](tests/Webhook_ListenerDotNet.Tests)
-[![Architecture](https://img.shields.io/badge/Architecture-Asynchronous%20Queue-orange)](#architettura)
+[![Architecture](https://img.shields.io/badge/Architecture-Asynchronous%20Queue-orange)](#-architecture)
 
-Un servizio API ASP.NET Core ad alte prestazioni, sicuro e scalabile per la ricezione e l'elaborazione disaccoppiata di **webhook** (compatibile con provider come GitHub, Stripe, Shopify, Slack e sistemi personalizzati).
-
----
-
-## 📋 Indice
-- [Caratteristiche Principali](#-caratteristiche-principali)
-- [Architettura](#-architettura)
-- [Endpoint API](#-endpoint-api)
-- [Sicurezza](#-sicurezza)
-- [Configurazione (`appsettings.json`)](#-configurazione-appsettingsjson)
-- [Guida Rapida](#-guida-rapida)
-- [Esempi di Utilizzo](#-esempi-di-utilizzo)
-- [Test Automatizzati](#-test-automatizzati)
-- [Esecuzione con Docker](#-esecuzione-con-docker)
-- [Licenza](#-licenza)
+A high-performance, secure, and scalable ASP.NET Core API service designed for decoupled reception and processing of **webhooks** (compatible with providers such as GitHub, Stripe, Shopify, Slack, and custom systems).
 
 ---
 
-## ✨ Caratteristiche Principali
+## 📋 Table of Contents
+- [Key Features](#-key-features)
+- [Architecture](#-architecture)
+- [API Endpoints](#-api-endpoints)
+- [Security](#-security)
+- [Configuration (`appsettings.json`)](#-configuration-appsettingsjson)
+- [Quick Start](#-quick-start)
+- [Usage Examples](#-usage-examples)
+- [Automated Tests](#-automated-tests)
+- [Running with Docker](#-running-with-docker)
+- [License](#-license)
 
-- **Target .NET 10**: sviluppato e ottimizzato per l'ultimo runtime e SDK .NET 10.
-- **Elaborazione Asincrona Disaccoppiata (Zero Bottleneck)**:
-  - Utilizza `System.Threading.Channels` (`BoundedChannel`) per memorizzare in una coda ad alta concorrenza gli eventi in arrivo.
-  - Risponde immediatamente al mittente con **`202 Accepted`**, delegando la logica a un `BackgroundService` dedicato (`WebhookProcessingWorker`).
-- **High-Performance JSON con `System.Text.Json`**:
-  - Rimosso `Newtonsoft.Json` a favore delle API native ad altissime prestazioni e a basso impatto di memoria (`JsonDocument`, `JsonElement`).
-- **Sicurezza Enterprise**:
-  - Verifica opzionale tramite **Secret Token** (`X-Webhook-Secret`).
-  - Verifica crittografica con **Firma HMAC-SHA256** (in stile GitHub/Stripe tramite `X-Hub-Signature-256`), con confronto in tempo costante (`CryptographicOperations.FixedTimeEquals`) per prevenire timing attacks.
-  - Protezione da attacchi DoS tramite validazione della dimensione massima del payload (`MaxPayloadSizeBytes`).
-- **Resilienza e Rate Limiting**:
-  - Rate limiting nativo ASP.NET Core (`Microsoft.AspNetCore.RateLimiting`) per proteggere il server da flooding e picchi anomali.
+---
+
+## ✨ Key Features
+
+- **Target .NET 10**: Built and optimized for the latest .NET 10 runtime and C# 13 language features.
+- **Decoupled Asynchronous Processing (Zero Bottlenecks)**:
+  - Uses `System.Threading.Channels` (`BoundedChannel`) to buffer incoming events into a high-concurrency in-memory queue.
+  - Immediately acknowledges the sender with **`202 Accepted`**, delegating heavy processing to a dedicated `BackgroundService` (`WebhookProcessingWorker`).
+- **High-Performance JSON with `System.Text.Json`**:
+  - Replaced legacy `Newtonsoft.Json` with high-throughput, low-allocation native APIs (`JsonDocument`, `JsonElement`).
+- **Enterprise-Grade Security**:
+  - Optional verification via **Pre-shared Secret Token** (`X-Webhook-Secret`).
+  - Cryptographic verification via **HMAC-SHA256 Signature** (GitHub/Stripe style via `X-Hub-Signature-256`), using constant-time comparison (`CryptographicOperations.FixedTimeEquals`) to prevent timing attacks.
+  - DoS protection through maximum payload size validation (`MaxPayloadSizeBytes`).
+- **Resilience & Rate Limiting**:
+  - Built-in ASP.NET Core rate limiting (`Microsoft.AspNetCore.RateLimiting`) to safeguard against traffic spikes and flooding.
 - **Observability & Diagnostics**:
-  - Endpoint di **Health Check** (`/health`).
-  - Endpoint di stato diagnostico con metriche della coda (`/api/webhook/status`).
-  - Logging contestuale e strutturato con `ILogger` (inclusione automatica di `EventId`, `EventType` e `SourceIp`).
-- **Retrocompatibilità**:
-  - Mantiene la compatibilità con la rotta originaria `/api/listener` oltre alle nuove `/api/webhook` e `/api/v1/webhook`.
-- **OpenAPI & Swagger UI**: documentazione e collaudo interattivo integrati su `/swagger`.
+  - Health check endpoint (`/health`).
+  - Diagnostic status endpoint with real-time queue metrics (`/api/webhook/status`).
+  - Contextual structured logging via `ILogger` (automatically tracks `EventId`, `EventType`, and `SourceIp`).
+- **Backward Compatibility**:
+  - Retains full compatibility with the legacy `/api/listener` route alongside `/api/webhook` and `/api/v1/webhook`.
+- **OpenAPI & Swagger UI**: Integrated interactive documentation and testing available at `/swagger`.
 
 ---
 
-## 🏛️ Architettura
+## 🏛️ Architecture
 
-Il flusso della richiesta è progettato per garantire la minima latenza di risposta al client del webhook, garantendo allo stesso tempo elaborazione affidabile e sicura:
+The request pipeline is designed to ensure minimal response latency for webhook callers while guaranteeing safe, reliable, and decoupled background execution:
 
 ```mermaid
 flowchart TD
     Client["Client / Webhook Provider\n(Stripe, GitHub, Custom)"] -->|"POST /api/webhook"| RateLimiter["Rate Limiter (ASP.NET Core)"]
-    RateLimiter -->|"Consente"| Controller["WebhookController"]
-    RateLimiter -.->|"Supera soglia"| R429["429 Too Many Requests"]
+    RateLimiter -->|"Allowed"| Controller["WebhookController"]
+    RateLimiter -.->|"Exceeded threshold"| R429["429 Too Many Requests"]
 
     Controller --> SecurityValidator{"IWebhookSecurityValidator\n(Secret / HMAC SHA-256)"}
-    SecurityValidator -.->|"Non Valido"| R401["401 Unauthorized\n(ProblemDetails)"]
+    SecurityValidator -.->|"Invalid"| R401["401 Unauthorized\n(ProblemDetails)"]
 
-    SecurityValidator -->|"Valido"| JsonParser{"Validazione JSON"}
-    JsonParser -.->|"JSON Malformato"| R400["400 Bad Request\n(ProblemDetails)"]
+    SecurityValidator -->|"Valid"| JsonParser{"JSON Validation"}
+    JsonParser -.->|"Malformed JSON"| R400["400 Bad Request\n(ProblemDetails)"]
 
-    JsonParser -->|"Valido"| QueueMode{"Modalità Elaborazione?"}
+    JsonParser -->|"Valid"| QueueMode{"Processing Mode?"}
     
     QueueMode -->|"Async (Default)"| BoundedChannel["IWebhookQueue\n(System.Threading.Channels)"]
     BoundedChannel --> Response202["202 Accepted\n(WebhookResponse)"]
@@ -80,33 +80,33 @@ flowchart TD
 
 ---
 
-## 📡 Endpoint API
+## 📡 API Endpoints
 
-| Metodo | Percorso | Descrizione | Risposte Principali |
+| Method | Path | Description | Key Responses |
 | :--- | :--- | :--- | :--- |
-| `POST` | `/api/webhook`<br>`/api/v1/webhook`<br>`/api/listener` | Riceve il payload del webhook in formato JSON | `202 Accepted` (Coda asincrona)<br>`200 OK` (Sincrono)<br>`400 Bad Request`<br>`401 Unauthorized`<br>`413 Payload Too Large` |
-| `GET` | `/api/webhook/status` | Stato del servizio e numero di eventi pendenti in coda | `200 OK` |
-| `GET` | `/health` | Health check ASP.NET Core per Kubernetes/Docker/Cloud probe | `200 OK` ("Healthy") |
-| `GET` | `/swagger` | Documentazione interattiva Swagger UI (in Development) | `200 OK` |
+| `POST` | `/api/webhook`<br>`/api/v1/webhook`<br>`/api/listener` | Ingests webhook payload (JSON) | `202 Accepted` (Async queue)<br>`200 OK` (Sync mode)<br>`400 Bad Request`<br>`401 Unauthorized`<br>`413 Payload Too Large` |
+| `GET` | `/api/webhook/status` | Service status and pending queue counter | `200 OK` |
+| `GET` | `/health` | ASP.NET Core health check for Kubernetes/Docker/Cloud probes | `200 OK` ("Healthy") |
+| `GET` | `/swagger` | Interactive Swagger UI documentation (in Development) | `200 OK` |
 
 ---
 
-## 🔒 Sicurezza
+## 🔒 Security
 
-Il listener supporta due meccanismi di autenticazione configurabili indipendentemente o insieme:
+The listener supports two authentication mechanisms that can be configured independently or combined:
 
 1. **Pre-shared Secret Token**:
-   - Inviare l'header `X-Webhook-Secret: <tuo-token>`.
+   - Send the header: `X-Webhook-Secret: <your-token>`.
 2. **HMAC-SHA256 Signature**:
-   - Inviare l'header `X-Hub-Signature-256: sha256=<digest_esadecimale>`.
-   - Il digest viene calcolato sul corpo grezzo binario della richiesta utilizzando il segreto `HmacSecret`.
+   - Send the header: `X-Hub-Signature-256: sha256=<hex_digest>`.
+   - The digest is computed across the raw binary request body using the configured `HmacSecret`.
 
 > [!NOTE]
-> Per disabilitare la verifica di sicurezza durante i test locali o in ambienti di sviluppo, imposta `"EnableSecurityValidation": false` in `appsettings.json`.
+> To disable security validation during local development or unit testing, set `"EnableSecurityValidation": false` in `appsettings.json`.
 
 ---
 
-## ⚙️ Configurazione (`appsettings.json`)
+## ⚙️ Configuration (`appsettings.json`)
 
 ```json
 {
@@ -131,44 +131,44 @@ Il listener supporta due meccanismi di autenticazione configurabili indipendente
 }
 ```
 
-### Parametri di `WebhookSettings`
-| Chiave | Tipo | Default | Descrizione |
+### `WebhookSettings` Parameters
+| Key | Type | Default | Description |
 | :--- | :--- | :--- | :--- |
-| `EnableSecurityValidation` | `bool` | `false` | Se `true`, richiede token o firma HMAC valida. |
-| `SecretToken` | `string` | - | Valore del token segreto pre-condiviso. |
-| `SecretTokenHeaderName` | `string` | `"X-Webhook-Secret"` | Nome dell'header contenente il token. |
-| `HmacSecret` | `string` | - | Chiave crittografica per calcolare la firma HMAC-SHA256. |
-| `HmacHeaderName` | `string` | `"X-Hub-Signature-256"` | Header contenente la firma HMAC. |
-| `MaxPayloadSizeBytes` | `long` | `10485760` (10 MB) | Limite massimo di dimensione per singola richiesta. |
-| `QueueCapacity` | `int` | `10000` | Capacità massima della coda in-memory prima del backpressure. |
-| `EnableBackgroundProcessing` | `bool` | `true` | Se `true` risponde con `202 Accepted` e accoda. Se `false` elabora sincrono. |
+| `EnableSecurityValidation` | `bool` | `false` | When `true`, requires a valid secret token or HMAC signature. |
+| `SecretToken` | `string` | - | Pre-shared secret token value. |
+| `SecretTokenHeaderName` | `string` | `"X-Webhook-Secret"` | Header name carrying the secret token. |
+| `HmacSecret` | `string` | - | Cryptographic key used to verify HMAC-SHA256 signatures. |
+| `HmacHeaderName` | `string` | `"X-Hub-Signature-256"` | Header name carrying the HMAC signature. |
+| `MaxPayloadSizeBytes` | `long` | `10485760` (10 MB) | Maximum permitted payload size per request. |
+| `QueueCapacity` | `int` | `10000` | Maximum in-memory queue capacity before applying backpressure. |
+| `EnableBackgroundProcessing` | `bool` | `true` | When `true`, responds with `202 Accepted` and enqueues. When `false`, processes synchronously. |
 
 ---
 
-## 🚀 Guida Rapida
+## 🚀 Quick Start
 
-### Prerequisiti
+### Prerequisites
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
 
-### 1. Clonare ed eseguire
+### 1. Build and Run
 ```bash
-# Ripristina le dipendenze
+# Restore dependencies
 dotnet restore
 
-# Compila la soluzione
+# Build the solution
 dotnet build
 
-# Avvia l'applicazione
+# Launch the application
 dotnet run --project Webhook_ListenerDotNet
 ```
 
-L'API sarà disponibile all'indirizzo configurato in `Properties/launchSettings.json` (es. `https://localhost:7291` o `http://localhost:5079`).
+The API will be available at the URL configured in `Properties/launchSettings.json` (e.g., `https://localhost:7291` or `http://localhost:5079`).
 
 ---
 
-## 💻 Esempi di Utilizzo
+## 💻 Usage Examples
 
-### Inviare un Webhook (curl)
+### Sending a Webhook (curl)
 ```bash
 curl -X POST "http://localhost:5079/api/webhook" \
   -H "Content-Type: application/json" \
@@ -185,7 +185,7 @@ curl -X POST "http://localhost:5079/api/webhook" \
   }'
 ```
 
-**Risposta (HTTP 202 Accepted):**
+**Response (HTTP 202 Accepted):**
 ```json
 {
   "eventId": "evt_98765",
@@ -195,7 +195,7 @@ curl -X POST "http://localhost:5079/api/webhook" \
 }
 ```
 
-### Inviare con Token Segreto (PowerShell)
+### Sending with a Secret Token (PowerShell)
 ```powershell
 $body = @{
     event = "user.registered"
@@ -209,49 +209,49 @@ Invoke-RestMethod -Uri "http://localhost:5079/api/webhook" `
   -Body $body
 ```
 
-### Verificare lo Stato della Coda
+### Inspecting Queue Status
 ```bash
 curl http://localhost:5079/api/webhook/status
 ```
 
 ---
 
-## 🧪 Test Automatizzati
+## 🧪 Automated Tests
 
-Il repository include una suite completa di test unitari e di integrazione con **xUnit** e `WebApplicationFactory`:
+The solution includes a comprehensive unit and integration test suite built with **xUnit** and `WebApplicationFactory`:
 
 ```bash
-# Esegui tutti i test
+# Execute all tests
 dotnet test
 ```
 
-### Copertura dei test:
-- **Validazione Sicurezza**: test del secret token (valido, mancante, errato), test della firma crittografica HMAC-SHA256 (valida, mismatch, malformata).
-- **Coda Asincrona**: test di enqueue/dequeue concorrente con `System.Threading.Channels`.
-- **Integrazione API**:
-  - Risposta `202 Accepted` su payload validi.
-  - Verifica della retrocompatibilità della rotta `/api/listener`.
-  - Risposta `400 Bad Request` su JSON malformato o payload vuoto.
-  - Risposta `200 OK` sull'endpoint di monitoraggio `/health`.
+### Test Coverage Highlights:
+- **Security Validation**: Secret token validation (valid, missing, incorrect) and HMAC-SHA256 signature verification (valid, mismatch, malformed).
+- **Asynchronous Queue**: High-concurrency enqueue/dequeue benchmarks using `System.Threading.Channels`.
+- **API Integration**:
+  - `202 Accepted` response handling on valid payloads.
+  - Backward compatibility checks for the `/api/listener` route.
+  - `400 Bad Request` handling on malformed JSON or empty bodies.
+  - `200 OK` response checks for the `/health` probe endpoint.
 
 ---
 
-## 🐳 Esecuzione con Docker
+## 🐳 Running with Docker
 
-È incluso un `Dockerfile` multi-stage pronto per la produzione:
+A multi-stage production-ready `Dockerfile` is included:
 
 ```bash
-# Build dell'immagine
+# Build the Docker image
 docker build -t webhook-listener:latest .
 
-# Avvio del container
+# Run the container
 docker run -d -p 8080:8080 --name webhook-listener webhook-listener:latest
 ```
 
-L'API sarà raggiungibile su `http://localhost:8080/api/webhook` con health check su `http://localhost:8080/health`.
+The API will be accessible at `http://localhost:8080/api/webhook`, and the health probe at `http://localhost:8080/health`.
 
 ---
 
-## 📄 Licenza
+## 📄 License
 
-Distribuito sotto licenza MIT. Per maggiori dettagli, consultare il file [LICENSE.txt](LICENSE.txt).
+Distributed under the MIT License. See [LICENSE.txt](LICENSE.txt) for more details.
